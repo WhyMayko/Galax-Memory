@@ -54,7 +54,7 @@ Some custom features like `.Nigga` that returns true when someone is really blac
 
 ```lua
 local character = memory:bind(rawcharacter)
-print(character.DarkColor)
+print(character.Nigga)
 ```
 
 `DarkColor` is read-only. To use another threshold from `0` to `1`, call `memory:darkcolor(rawcharacter, threshold)`.
