@@ -1,17 +1,24 @@
 # Galax Memory
 
-A Matcha memory library. It loads `Offsets.json` and `types.json`, requires both documents to use the same version, and converts reads and writes to the correct type. Consumer scripts never contain hardcoded offsets.
+Galax Memory is a Matcha memory library. It loads version-matched `Offsets.json` and `types.json`, resolves the required memory type, and exposes supported fields through a Lua proxy. Consumer scripts do not contain hardcoded offsets.
 
-## Loading
-
-Run `GalaxMemory.lua` before the consumer script. It registers `GalaxMemory` in Matcha's global environment because `loadstring` drops a chunk's top-level `return` value.
+## Quick start
 
 ```lua
-loadstring(game:HttpGet("URL/TO/GalaxMemory.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/WhyMayko/Galax-Memory/main/GalaxMemory.lua"))()
+
 local memory = GalaxMemory.new()
+local camera = memory:bind(game:GetService("Workspace").CurrentCamera)
+
+camera.FieldOfView = 100
+print(camera.FieldOfView)
 ```
 
-`GalaxMemory.new()` tries three sources for each document. If you host the files elsewhere, provide matching URL pairs:
+## API
+
+### `GalaxMemory.new(options?)`
+
+Loads the offset and type manifests and returns a library instance. The manifests must report the same Roblox version. The default configuration tries three URLs for each manifest.
 
 ```lua
 local memory = GalaxMemory.new({
@@ -20,22 +27,77 @@ local memory = GalaxMemory.new({
 })
 ```
 
-## Usage
+Status: runtime validated.
+
+### `memory:bind(instance, requestedclass?)`
+
+Returns a memory proxy for an Instance. The proxy uses field access with `.`. Property names ignore case and separators, so `WalkSpeed`, `walkspeed`, and `WALK_SPEED` resolve to the same dump property.
 
 ```lua
-local humanoid = memory:bind(game:GetService("Players").LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid"))
+local humanoid = memory:bind(rawhumanoid)
 humanoid.WalkSpeed = 50
-humanoid.Sit = true
 print(humanoid.Health)
-
-local camera = memory:bind(workspace.CurrentCamera)
-camera.FieldOfView = 100
-print(camera.Position)
 ```
 
-`bind` selects the most specific class available in the dump and also accepts an explicit base class: `memory:bind(part, "BasePart")`. Property names ignore case and separators, so `WalkSpeed` resolves to the current `Walkspeed` offset.
+Pass `requestedclass` only when a supported base schema is required:
 
-For Roblox's internal UI, always use the memory proxy rather than the original instance:
+```lua
+local part = memory:bind(rawpart, "BasePart")
+print(part.Transparency)
+```
+
+Status: runtime validated for `Camera`, `Humanoid`, `MeshPart`, `Workspace`, and `DataModel`. Other classes require validation in a game that contains them.
+
+### `memory:read(instance, property, requestedclass?)`
+
+Reads one property without creating a proxy.
+
+```lua
+local health = memory:read(rawhumanoid, "Health")
+```
+
+Status: structurally validated; the public call has not been independently runtime-tested.
+
+### `memory:write(instance, property, value)`
+
+Writes one property without creating a proxy. The value is checked against the resolved memory type.
+
+```lua
+memory:write(rawcamera, "FieldOfView", 100)
+```
+
+Status: structurally validated; the public call has not been independently runtime-tested.
+
+### Proxy methods
+
+```lua
+local proxy = memory:bind(rawinstance)
+
+print(proxy:address())
+print(proxy:class())
+for _, property in ipairs(proxy:properties()) do
+    print(property)
+end
+```
+
+| Method | Result | Status |
+| --- | --- | --- |
+| `proxy:address()` | Instance memory address | Not independently runtime-tested |
+| `proxy:class()` | Original instance class name | Not independently runtime-tested |
+| `proxy:properties()` | Sorted supported property names | Used by `Validate.lua`; not independently runtime-tested |
+
+## Proxy behavior
+
+The bound proxy is distinct from the original Matcha Instance. This avoids collisions with native Matcha fields:
+
+```lua
+local raw = game:GetService("Workspace").CurrentCamera
+local camera = memory:bind(raw)
+
+camera.FieldOfView = 100
+```
+
+For Roblox UI, bind the UI instance before accessing memory-backed fields:
 
 ```lua
 local screen = memory:bind(screenGui)
@@ -45,22 +107,65 @@ local label = memory:bind(textLabel)
 label.Visible = false
 ```
 
-`ScreenGui.Enabled` exclusively uses the `ScreenGui_Enabled` offset. A `ScreenGui` proxy does not expose `Visible` because that property does not belong to the class; this prevents accessing a `GuiObject` offset on the wrong type.
+`ScreenGui.Enabled` maps to `GuiObject.ScreenGui_Enabled`. A `ScreenGui` proxy intentionally does not expose `Visible`.
 
-`BasePart.Color3` is read as three consecutive RGB bytes and returns a normalized `Color3`. The layout was verified on the character's `Head` with bytes `F8 F8 F8`, which equal `RGB(248, 248, 248)`. It remains read-only until writes are separately validated.
+## Type support
 
-`DarkColor` is read-only. To use another threshold from `0` to `1`, call `memory:darkcolor(rawcharacter, threshold)`.
+| Dump type | Library behavior | Runtime status |
+| --- | --- | --- |
+| `bool` | Reads and writes one byte as `true` or `false` | Read validated through `Humanoid.Sit`; write not validated |
+| `byte`, `BYTE`, `unsigned char` | Reads and writes one byte | Byte reads validated as part of `BasePart.Color3`; generic write not validated |
+| `int` | Reads and writes a signed integer | Executed in the read probe; value semantics not verified |
+| `short` | Reads as `int` | Not validated; this layout requires dedicated verification |
+| `float` | Reads and writes IEEE float | Validated with `Camera.FieldOfView` read and write |
+| `double` | Reads and writes IEEE double | Executed in the read probe; value semantics not verified |
+| `unsigned __int64`, `uintptr_t` | Reads and writes a pointer | Pointer reads validated; writes not validated |
+| `string` | Reads a pointer, then a null-terminated string | Not validated |
+| `Vector2` | Reads or writes two floats | Not validated |
+| `Vector3` | Reads or writes three floats | Not validated |
+| `Color3` | Reads or writes three floats | Not validated |
+| `BasePart.Color3` | Reads three consecutive RGB bytes as normalized `Color3` | Validated on a character `Head` |
+| `UDim2` | Reads or writes `{ xscale, xoffset, yscale, yoffset }` | Not validated |
+| `Matrix3x3`, `ViewMatrix_t` | Reads nine floats | Not validated; read-only |
+| `unknown`, `ColorUint_8` | Rejected with an explicit error | Rejection path not independently runtime-tested |
 
-Other computed values can follow the same pattern: `memory:virtual("Class", "Property", getter)`. Register it before calling `bind`; it then appears on the proxy as a read-only value, such as `proxy.Property`.
+`string`, matrices, `unknown`, and the byte-packed `BasePart.Color3` are read-only. The library errors explicitly instead of silently choosing another type.
 
-For use without a proxy: `memory:read(instance, "Health")` and `memory:write(instance, "Health", 100)`.
+## Class support
 
-## Supported types
+Every offset/type pair in the current manifest is loaded dynamically. The proxy also includes explicit base-schema support for these runtime classes:
 
-Reads: `bool`, `byte`, `int`, `float`, `double`, pointers, `string`, `Vector2`, `Vector3`, `Color3`, `UDim2`, and 3×3 matrices. Writes are type-checked; `string`, matrices, and `unknown` types are read-only for safety. `UDim2` uses `{ xscale, xoffset, yscale, yoffset }`.
+| Runtime class | Added base schema |
+| --- | --- |
+| `Part`, `MeshPart`, `WedgePart`, `CornerWedgePart`, `TrussPart`, `Seat`, `VehicleSeat`, `SpawnLocation`, `UnionOperation`, `NegateOperation`, `PartOperation` | `BasePart` |
+| `ScreenGui`, `Frame`, `ScrollingFrame`, `TextLabel`, `TextButton`, `TextBox`, `ImageLabel`, `ImageButton`, `VideoFrame`, `ViewportFrame` | `GuiObject` |
+| `Shirt`, `Pants`, `ShirtGraphic` | `Clothing` |
+| `Decal`, `Texture` | `Textures` |
 
-Every operation validates the instance, address, class, property, and type. Failures stop with an explicit message; the library never silently falls back to a different read.
+The Matcha runtime reports `Instance:IsA` as unreliable, so class inheritance uses this explicit table rather than calling `IsA`.
 
-## Validation
+## Validation status
 
-Run `Validate.lua` after loading the library for a read-only verification. It examines one instance of every class that exists in the open game and attempts to read every property exposed by the proxy, printing `Class:properties:failures`. Classes absent from the current game cannot be validated in that client, but remain available in the dump for games where they exist.
+| Scope | Result |
+| --- | --- |
+| Manifest structure | All 388 current offset/type pairs have matching local entries |
+| Remote manifest loading | Validated in Matcha; both documents loaded and reported the same version |
+| Library remote loading | Validated from the published GitHub raw URL |
+| `Camera.FieldOfView` | Read and write validated; resulting value was `100` |
+| `Humanoid.WalkSpeed` and `Humanoid.Sit` | Read validated |
+| `BasePart.Color3` | Validated against raw `F8 F8 F8` bytes and returned RGB `248, 248, 248` |
+| Low-level read probe | 17 properties from `DataModel` and `Workspace` read without runtime errors |
+| All 388 runtime values | Not validated; the required instances were not present in the test game |
+
+No bulk write test was run. Memory writes use the exact address and type selected by the manifest, so each new writable layout should be validated separately before relying on it.
+
+## Validation script
+
+Run `Validate.lua` after loading the library for a read-only scan of classes that exist in the current game:
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/WhyMayko/Galax-Memory/main/GalaxMemory.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/WhyMayko/Galax-Memory/main/Validate.lua"))()
+```
+
+It prints `Class:properties:failures`. Classes absent from the current game cannot be tested in that client.

@@ -305,9 +305,6 @@ function proxymetatable.__index(proxy, key)
     if not descriptor then
         fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
     end
-    if descriptor.getter then
-        return descriptor.getter(proxy.instance)
-    end
     return readvalue(proxy:entry(key))
 end
 
@@ -315,9 +312,6 @@ function proxymetatable.__newindex(proxy, key, value)
     local descriptor = proxy.lookup[normalize(key)]
     if not descriptor then
         fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
-    end
-    if descriptor.getter then
-        fail(descriptor.property .. " is read only")
     end
     local entry = proxy:entry(key)
     entry.value = value
@@ -338,22 +332,7 @@ function galaxmemory.new(options)
         offsets = offsetdocument.Offsets,
         types = typedocument.Types,
         version = offsetdocument["Roblox Version"],
-        virtuals = {},
     }
-
-    function self:virtual(classname, property, getter)
-        if type(classname) ~= "string" or not self.offsets[classname] then
-            fail("virtual class is invalid")
-        end
-        if type(property) ~= "string" or property == "" then
-            fail("virtual property is invalid")
-        end
-        if type(getter) ~= "function" then
-            fail("virtual getter is required")
-        end
-        self.virtuals[classname] = self.virtuals[classname] or {}
-        self.virtuals[classname][property] = getter
-    end
 
     function self:schemas(instance, requestedclass)
         if typeof(instance) ~= "Instance" or not validaddress(instance.Address) then
@@ -434,18 +413,6 @@ function galaxmemory.new(options)
                 end
             end
         end
-        local function addvirtuals(classname)
-            local virtuals = self.virtuals[classname]
-            if virtuals then
-                for property, getter in pairs(virtuals) do
-                    lookup[normalize(property)] = { getter = getter, property = property }
-                end
-            end
-        end
-        addvirtuals(instance.ClassName)
-        for _, classname in ipairs(schemas) do
-            addvirtuals(classname)
-        end
         local proxy = {
             instance = instance,
             classname = instance.ClassName,
@@ -461,27 +428,6 @@ function galaxmemory.new(options)
         proxy.owner = self
         return setmetatable(proxy, proxymetatable)
     end
-
-    function self:nigga(character, threshold)
-        if typeof(character) ~= "Instance" or character.ClassName ~= "Model" then
-            fail("character model is required")
-        end
-        threshold = threshold or 0.5
-        if type(threshold) ~= "number" or threshold < 0 or threshold > 1 then
-            fail("threshold must be between zero and one")
-        end
-        local head = character:FindFirstChild("Head")
-        if not head then
-            fail("character head is required")
-        end
-        local color = self:read(head, "Color3")
-        local luminance = color.R * 0.2126 + color.G * 0.7152 + color.B * 0.0722
-        return luminance <= threshold
-    end
-
-    self:virtual("Model", "Nigga", function(character)
-        return self:nigga(character)
-    end)
 
     return self
 end
