@@ -166,6 +166,9 @@ local function readvalue(entry)
     if entry.kind == "pointer" then
         return memoryread("uintptr_t", entry.address)
     end
+    if entry.kind == "fov" then
+        return memoryread("float", entry.address) * 180 / math.pi
+    end
     if entry.kind == "string" then
         local pointer = memoryread("uintptr_t", entry.address)
         if not validaddress(pointer) then
@@ -247,6 +250,15 @@ local function writevalue(entry)
         end
         entry.kind = "byte"
         entry.value = entry.value and 1 or 0
+        memorywrite(entry)
+        return
+    end
+    if entry.kind == "fov" then
+        if type(entry.value) ~= "number" or entry.value <= 0 or entry.value > 120 then
+            fail(entry.property .. " expects degrees from one to one hundred twenty")
+        end
+        entry.kind = "float"
+        entry.value = entry.value * math.pi / 180
         memorywrite(entry)
         return
     end
@@ -376,6 +388,9 @@ function galaxmemory.new(options)
                 local kind = aliases[types[property]] or "unknown"
                 if classname == "BasePart" and property == "Color3" then
                     kind = "rgbbyte"
+                end
+                if classname == "Camera" and property == "FieldOfView" then
+                    kind = "fov"
                 end
                 return {
                     address = instance.Address + offsets[property],

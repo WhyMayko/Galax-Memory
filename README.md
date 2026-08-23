@@ -117,7 +117,7 @@ label.Visible = false
 | `byte`, `BYTE`, `unsigned char` | Reads and writes one byte | Byte reads validated as part of `BasePart.Color3`; generic write not validated |
 | `int` | Reads and writes a signed integer | Executed in the read probe; value semantics not verified |
 | `short` | Reads as `int` | Not validated; this layout requires dedicated verification |
-| `float` | Reads and writes IEEE float | Validated with `Camera.FieldOfView` read and write |
+| `float` | Reads and writes IEEE float | Executed in the read probe; value semantics not verified |
 | `double` | Reads and writes IEEE double | Executed in the read probe; value semantics not verified |
 | `unsigned __int64`, `uintptr_t` | Reads and writes a pointer | Pointer reads validated; writes not validated |
 | `string` | Reads a pointer, then a null-terminated string | Not validated |
@@ -125,6 +125,7 @@ label.Visible = false
 | `Vector3` | Reads or writes three floats | Not validated |
 | `Color3` | Reads or writes three floats | Not validated |
 | `BasePart.Color3` | Reads three consecutive RGB bytes as normalized `Color3` | Validated on a character `Head` |
+| `Camera.FieldOfView` | Converts between public degrees and the internal radians float | Experimental: the memory field accepts and retains writes, but does not synchronize Matcha's native camera property |
 | `UDim2` | Reads or writes `{ xscale, xoffset, yscale, yoffset }` | Not validated |
 | `Matrix3x3`, `ViewMatrix_t` | Reads nine floats | Not validated; read-only |
 | `unknown`, `ColorUint_8` | Rejected with an explicit error | Rejection path not independently runtime-tested |
@@ -151,7 +152,7 @@ The Matcha runtime reports `Instance:IsA` as unreliable, so class inheritance us
 | Manifest structure | All 388 current offset/type pairs have matching local entries |
 | Remote manifest loading | Validated in Matcha; both documents loaded and reported the same version |
 | Library remote loading | Validated from the published GitHub raw URL |
-| `Camera.FieldOfView` | Read and write validated; resulting value was `100` |
+| `Camera.FieldOfView` | Memory read converted correctly; a 100-degree write persisted for 0.5 s and was restored, but native Matcha FOV remained unchanged |
 | `Humanoid.WalkSpeed` and `Humanoid.Sit` | Read validated |
 | `BasePart.Color3` | Validated against raw `F8 F8 F8` bytes and returned RGB `248, 248, 248` |
 | Low-level read probe | 17 properties from `DataModel` and `Workspace` read without runtime errors |
