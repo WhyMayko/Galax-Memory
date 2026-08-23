@@ -49,14 +49,6 @@ label.Visible = false
 
 `BasePart.Color3` is read as three consecutive RGB bytes and returns a normalized `Color3`. The layout was verified on the character's `Head` with bytes `F8 F8 F8`, which equal `RGB(248, 248, 248)`. It remains read-only until writes are separately validated.
 
-Some custom features like `.Nigga` that returns true when someone is really black gangster and false when he isnt black gangster! 👮🚓
-``More Coming...`` 
-
-```lua
-local character = memory:bind(rawcharacter)
-print(character.Nigga)
-```
-
 `DarkColor` is read-only. To use another threshold from `0` to `1`, call `memory:darkcolor(rawcharacter, threshold)`.
 
 Other computed values can follow the same pattern: `memory:virtual("Class", "Property", getter)`. Register it before calling `bind`; it then appears on the proxy as a read-only value, such as `proxy.Property`.
