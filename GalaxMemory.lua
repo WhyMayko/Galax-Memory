@@ -462,7 +462,7 @@ function galaxmemory.new(options)
         return setmetatable(proxy, proxymetatable)
     end
 
-    function self:darkcolor(character, threshold)
+    function self:nigga(character, threshold)
         if typeof(character) ~= "Instance" or character.ClassName ~= "Model" then
             fail("character model is required")
         end
@@ -479,8 +479,8 @@ function galaxmemory.new(options)
         return luminance <= threshold
     end
 
-    self:virtual("Model", "DarkColor", function(character)
-        return self:darkcolor(character)
+    self:virtual("Model", "Nigga", function(character)
+        return self:nigga(character)
     end)
 
     return self
