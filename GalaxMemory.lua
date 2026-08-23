@@ -172,7 +172,7 @@ local function readvalue(entry)
     if entry.kind == "string" then
         local pointer = memoryread("uintptr_t", entry.address)
         if not validaddress(pointer) then
-            return ""
+            fail(entry.property .. " has an invalid string pointer")
         end
         return memoryread("string", pointer)
     end

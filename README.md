@@ -113,14 +113,14 @@ label.Visible = false
 
 | Dump type | Library behavior | Runtime status |
 | --- | --- | --- |
-| `bool` | Reads and writes one byte as `true` or `false` | Read validated through `Humanoid.Sit`; write not validated |
+| `bool` | Reads and writes one byte as `true` or `false` | Read validated through `Humanoid.Sit`, Lighting shadows, and enabled effects; writes not validated |
 | `byte`, `BYTE`, `unsigned char` | Reads and writes one byte | Byte reads validated as part of `BasePart.Color3`; generic write not validated |
 | `int` | Reads and writes a signed integer | Executed in the read probe; value semantics not verified |
 | `short` | Reads as `int` | Not validated; this layout requires dedicated verification |
-| `float` | Reads and writes IEEE float | Executed in the read probe; value semantics not verified |
+| `float` | Reads and writes IEEE float | Semantically validated for Lighting fog/brightness and effect intensity/size fields; writes not validated |
 | `double` | Reads and writes IEEE double | Executed in the read probe; value semantics not verified |
 | `unsigned __int64`, `uintptr_t` | Reads and writes a pointer | Pointer reads validated; writes not validated |
-| `string` | Reads a pointer, then a null-terminated string | Not validated |
+| `string` | Reads a pointer, then a null-terminated string | Validated with Decal, Texture, MeshPart, SurfaceAppearance, and Clothing asset paths |
 | `Vector2` | Reads or writes two floats | Not validated |
 | `Vector3` | Reads or writes three floats | Not validated |
 | `Color3` | Reads or writes three floats | Not validated |
@@ -155,8 +155,11 @@ The Matcha runtime reports `Instance:IsA` as unreliable, so class inheritance us
 | `Camera.FieldOfView` | Memory read converted correctly; a 100-degree write persisted for 0.5 s and was restored, but native Matcha FOV remained unchanged |
 | `Humanoid.WalkSpeed` and `Humanoid.Sit` | Read validated |
 | `BasePart.Color3` | Validated against raw `F8 F8 F8` bytes and returned RGB `248, 248, 248` |
-| Low-level read probe | 17 properties from `DataModel` and `Workspace` read without runtime errors |
-| All 388 runtime values | Not validated; the required instances were not present in the test game |
+| Low-level read probe | 222 properties across 34 schemas read without runtime errors |
+| Lighting | `FogStart = 0`, `FogEnd = 100000`, `Brightness = 3`, and `GlobalShadows = true` read from memory |
+| Lighting effects | Sky, Atmosphere, SunRaysEffect, BloomEffect, DepthOfFieldEffect, and BlurEffect read without errors; their scalar values were plausible for the active scene |
+| Texture assets | Decal/Texture IDs, MeshPart.MeshId, SurfaceAppearance ColorMap/NormalMap, and Clothing.Template returned concrete asset paths or IDs |
+| All 388 runtime values | Not fully validated; only schemas and instances present in the test game were probed |
 
 No bulk write test was run. Memory writes use the exact address and type selected by the manifest, so each new writable layout should be validated separately before relying on it.
 
