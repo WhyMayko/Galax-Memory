@@ -88,14 +88,18 @@ end
 
 ## Proxy behavior
 
-The bound proxy is distinct from the original Matcha Instance. This avoids collisions with native Matcha fields:
+The bound proxy wraps the original Matcha Instance, providing seamless access to both memory-backed fields and native Matcha properties:
 
 ```lua
 local raw = game:GetService("Workspace").CurrentCamera
 local camera = memory:bind(raw)
 
-camera.FieldOfView = 100
+camera.FieldOfView = 100 -- memory-backed field
+print(camera.Name)       -- native Matcha property fallback!
 ```
+
+- **Transparent Fallback:** If a field is not mapped in memory, the proxy seamlessly delegates to `proxy.instance[field]`. Native methods (e.g. `:GetChildren()`) are automatically bound.
+- **Weak-Table Proxy Cache:** `memory:bind(instance)` caches proxies using a weak table (`__mode = "k"`), returning the existing wrapper with zero allocations in high-frequency 60 FPS render loops.
 
 For Roblox UI, bind the UI instance before accessing memory-backed fields:
 
@@ -139,7 +143,7 @@ Every offset/type pair in the current manifest is loaded dynamically. The proxy 
 | Runtime class | Added base schema |
 | --- | --- |
 | `Part`, `MeshPart`, `WedgePart`, `CornerWedgePart`, `TrussPart`, `Seat`, `VehicleSeat`, `SpawnLocation`, `UnionOperation`, `NegateOperation`, `PartOperation` | `BasePart` |
-| `ScreenGui`, `Frame`, `ScrollingFrame`, `TextLabel`, `TextButton`, `TextBox`, `ImageLabel`, `ImageButton`, `VideoFrame`, `ViewportFrame` | `GuiObject` |
+| `ScreenGui`, `BillboardGui`, `SurfaceGui`, `Frame`, `ScrollingFrame`, `TextLabel`, `TextButton`, `TextBox`, `ImageLabel`, `ImageButton`, `VideoFrame`, `ViewportFrame` | `GuiObject` |
 | `Shirt`, `Pants`, `ShirtGraphic` | `Clothing` |
 | `Decal`, `Texture` | `Textures` |
 

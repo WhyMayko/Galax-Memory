@@ -43,6 +43,8 @@ local readonly = {
 
 local classbases = {
     ScreenGui = { "GuiObject" },
+    BillboardGui = { "GuiObject" },
+    SurfaceGui = { "GuiObject" },
     Frame = { "GuiObject" },
     ScrollingFrame = { "GuiObject" },
     TextLabel = { "GuiObject" },
@@ -314,20 +316,38 @@ function proxymetatable.__index(proxy, key)
         return method
     end
     local descriptor = proxy.lookup[normalize(key)]
-    if not descriptor then
-        fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
+    if descriptor then
+        return readvalue(proxy:entry(key))
     end
-    return readvalue(proxy:entry(key))
+    local ok, native = pcall(function()
+        return proxy.instance[key]
+    end)
+    if ok and native ~= nil then
+        if type(native) == "function" then
+            return function(_, ...)
+                return native(proxy.instance, ...)
+            end
+        end
+        return native
+    end
+    fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
 end
 
 function proxymetatable.__newindex(proxy, key, value)
     local descriptor = proxy.lookup[normalize(key)]
-    if not descriptor then
-        fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
+    if descriptor then
+        local entry = proxy:entry(key)
+        entry.value = value
+        writevalue(entry)
+        return
     end
-    local entry = proxy:entry(key)
-    entry.value = value
-    writevalue(entry)
+    local ok = pcall(function()
+        proxy.instance[key] = value
+    end)
+    if ok then
+        return
+    end
+    fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
 end
 
 function galaxmemory.new(options)
@@ -335,8 +355,20 @@ function galaxmemory.new(options)
     if type(options) ~= "table" then
         fail("options must be a table")
     end
-    local offsetdocument = loaddocument(options.offseturls or defaults.offseturls, "Offsets")
-    local typedocument = loaddocument(options.typeurls or defaults.typeurls, "Types")
+    local offsetdocument
+    if options.offsets then
+        offsetdocument = { Offsets = options.offsets, ["Roblox Version"] = options.version or "custom" }
+    else
+        offsetdocument = loaddocument(options.offseturls or defaults.offseturls, "Offsets")
+    end
+
+    local typedocument
+    if options.types then
+        typedocument = { Types = options.types, ["Roblox Version"] = options.version or "custom" }
+    else
+        typedocument = loaddocument(options.typeurls or defaults.typeurls, "Types")
+    end
+
     if offsetdocument["Roblox Version"] ~= typedocument["Roblox Version"] then
         fail("offset and type versions do not match")
     end
@@ -344,6 +376,7 @@ function galaxmemory.new(options)
         offsets = offsetdocument.Offsets,
         types = typedocument.Types,
         version = offsetdocument["Roblox Version"],
+        proxies = setmetatable({}, { __mode = "k" }),
     }
 
     function self:schemas(instance, requestedclass)
@@ -381,22 +414,25 @@ function galaxmemory.new(options)
         if type(property) ~= "string" then
             fail("property must be a string")
         end
+        local target = normalize(property)
         for _, classname in ipairs(self:schemas(instance, requestedclass)) do
             local offsets = self.offsets[classname]
             local types = self.types[classname]
-            if type(offsets[property]) == "number" and type(types[property]) == "string" then
-                local kind = aliases[types[property]] or "unknown"
-                if classname == "BasePart" and property == "Color3" then
-                    kind = "rgbbyte"
+            for rawprop, offset in pairs(offsets) do
+                if normalize(rawprop) == target and type(offset) == "number" and type(types[rawprop]) == "string" then
+                    local kind = aliases[types[rawprop]] or "unknown"
+                    if classname == "BasePart" and rawprop == "Color3" then
+                        kind = "rgbbyte"
+                    end
+                    if classname == "Camera" and rawprop == "FieldOfView" then
+                        kind = "fov"
+                    end
+                    return {
+                        address = instance.Address + offset,
+                        kind = kind,
+                        property = rawprop,
+                    }
                 end
-                if classname == "Camera" and property == "FieldOfView" then
-                    kind = "fov"
-                end
-                return {
-                    address = instance.Address + offsets[property],
-                    kind = kind,
-                    property = property,
-                }
             end
         end
         fail("unknown property " .. property .. " for " .. instance.ClassName)
@@ -413,6 +449,9 @@ function galaxmemory.new(options)
     end
 
     function self:bind(instance, requestedclass)
+        if not requestedclass and self.proxies[instance] then
+            return self.proxies[instance]
+        end
         local schemas = self:schemas(instance, requestedclass)
         local lookup = {}
         if instance.ClassName == "ScreenGui" then
@@ -441,10 +480,15 @@ function galaxmemory.new(options)
             return self.owner:entry(self.instance, descriptor.property, descriptor.classname)
         end
         proxy.owner = self
-        return setmetatable(proxy, proxymetatable)
+        local bound = setmetatable(proxy, proxymetatable)
+        if not requestedclass then
+            self.proxies[instance] = bound
+        end
+        return bound
     end
 
     return self
 end
 
 getfenv().GalaxMemory = galaxmemory
+return galaxmemory
