@@ -314,8 +314,8 @@ function methods:animations()
     return self.owner:animations(self.instance)
 end
 
-function methods:lookat(target_pos)
-    return self.owner:lookat(self.instance, target_pos)
+function methods:lookat(target_pos, method)
+    return self.owner:lookat(self.instance, target_pos, method)
 end
 
 function proxymetatable.__index(proxy, key)
@@ -593,12 +593,16 @@ function galaxmemory.new(options)
         return { xx, yx, zx, xy, yy, zy, xz, yz, zz }
     end
 
-    function self:lookat(part, target_pos)
+    function self:lookat(part, target_pos, method)
         local inst = (type(part) == "table" and part.instance) and part.instance or part
         if typeof(inst) ~= "Instance" or not validaddress(inst.Address) or typeof(target_pos) ~= "Vector3" then
             return false
         end
         local my_pos = inst.Position
+        if method == "cframe" then
+            inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+            return true
+        end
         local prim_off = self.offsets.BasePart and self.offsets.BasePart.Primitive
         local rot_off = self.offsets.Primitive and self.offsets.Primitive.Rotation
         local prim = prim_off and self:pointer(inst.Address + prim_off)
