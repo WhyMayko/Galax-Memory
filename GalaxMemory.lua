@@ -497,42 +497,37 @@ function galaxmemory.new(options)
 
     function self:pointer(address)
         if not validaddress(address) then return nil end
-        local ok, val = pcall(memory_read, "uintptr_t", address)
-        return (ok and validaddress(val)) and val or nil
+        local val = memory_read("uintptr_t", address)
+        if not validaddress(val) then return nil end
+        return val
     end
     self.ptr = self.pointer
 
     function self:string(address)
         if not validaddress(address) then return nil end
-        local ok, val = pcall(memory_read, "string", address)
-        return ok and val or nil
+        return memory_read("string", address)
     end
 
     function self:float(address)
         if not validaddress(address) then return nil end
-        local ok, val = pcall(memory_read, "float", address)
-        return (ok and type(val) == "number") and val or nil
+        return memory_read("float", address)
     end
 
     function self:byte(address)
         if not validaddress(address) then return nil end
-        local ok, val = pcall(memory_read, "byte", address)
-        return (ok and type(val) == "number") and val or nil
+        return memory_read("byte", address)
     end
 
     function self:int(address)
         if not validaddress(address) then return nil end
-        local ok, val = pcall(memory_read, "int", address)
-        return (ok and type(val) == "number") and val or nil
+        return memory_read("int", address)
     end
 
     function self:matrix(address)
         if not validaddress(address) then return nil end
         local values = {}
         for i = 0, 8 do
-            local ok, val = pcall(memory_read, "float", address + i * 4)
-            if not ok or type(val) ~= "number" then return nil end
-            values[i + 1] = val
+            values[i + 1] = memory_read("float", address + i * 4)
         end
         return values
     end
@@ -540,7 +535,7 @@ function galaxmemory.new(options)
     function self:writematrix(address, values)
         if not validaddress(address) or type(values) ~= "table" or #values < 9 then return false end
         for i = 1, 9 do
-            pcall(memory_write, "float", address + (i - 1) * 4, values[i])
+            memory_write("float", address + (i - 1) * 4, values[i])
         end
         return true
     end
@@ -571,7 +566,7 @@ function galaxmemory.new(options)
                     if raw then
                         local id = raw:match("%d+$")
                         if id then
-                            local tp = self:float(track + track_tp_off) or 0
+                            local tp = self:float(track + track_tp_off)
                             result[id] = { id = id, tp = tp }
                         end
                     end
@@ -613,9 +608,7 @@ function galaxmemory.new(options)
                 return self:writematrix(prim + rot_off, mat)
             end
         end
-        pcall(function()
-            inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
-        end)
+        inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
         return true
     end
 
