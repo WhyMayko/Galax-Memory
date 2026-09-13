@@ -82,9 +82,44 @@ end
 
 | Method | Result | Status |
 | --- | --- | --- |
-| `proxy:address()` | Instance memory address | Not independently runtime-tested |
-| `proxy:class()` | Original instance class name | Not independently runtime-tested |
-| `proxy:properties()` | Sorted supported property names | Used by `Validate.lua`; not independently runtime-tested |
+| `proxy:address()` | Instance memory address | Runtime validated |
+| `proxy:class()` | Original instance class name | Runtime validated |
+| `proxy:properties()` | Sorted supported property names | Used by `Validate.lua`; runtime validated |
+| `proxy:animations()` | Dictionary of active animation tracks `{ [id] = { id = id, tp = tp } }` | Runtime validated |
+| `proxy:lookat(target_pos)` | Rotates BasePart primitive rotation matrix towards target position | Runtime validated |
+
+### `memory:animations(animator)`
+
+Traverses an `Animator` instance's `ActiveAnimations` linked list directly in memory. Resolves each playing track's `AnimationId` string and `TimePosition` float. Returns `{ [id] = { id = id, tp = tp } }`.
+
+```lua
+local tracks = memory:animations(rawanimator)
+for id, info in pairs(tracks) do
+    print(id, info.tp)
+end
+```
+
+### `memory:lookat(part, target_pos)`
+
+Rotates a `BasePart` instance (or proxy) towards a 3D `Vector3` position. Updates the 3x3 orientation matrix directly at `Primitive.Rotation` in memory without modifying CFrame.
+
+```lua
+memory:lookat(humanoidRootPart, enemyPosition)
+```
+
+### Safe Raw Memory Access
+
+Direct, guarded accessors with null/invalid address protection (returns `nil` instead of throwing):
+
+```lua
+local ptr = memory:pointer(address)   -- or memory:ptr(address)
+local str = memory:string(address)
+local num = memory:float(address)
+local val = memory:byte(address)
+local int = memory:int(address)
+local mat = memory:matrix(address)
+memory:writematrix(address, mat_table)
+```
 
 ## Proxy behavior
 

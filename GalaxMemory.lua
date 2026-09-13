@@ -310,6 +310,14 @@ function methods:properties()
     return result
 end
 
+function methods:animations()
+    return self.owner:animations(self.instance)
+end
+
+function methods:lookat(target_pos)
+    return self.owner:lookat(self.instance, target_pos)
+end
+
 function proxymetatable.__index(proxy, key)
     local method = methods[key]
     if method then
@@ -485,6 +493,130 @@ function galaxmemory.new(options)
             self.proxies[instance] = bound
         end
         return bound
+    end
+
+    function self:pointer(address)
+        if not validaddress(address) then return nil end
+        local ok, val = pcall(memory_read, "uintptr_t", address)
+        return (ok and validaddress(val)) and val or nil
+    end
+    self.ptr = self.pointer
+
+    function self:string(address)
+        if not validaddress(address) then return nil end
+        local ok, val = pcall(memory_read, "string", address)
+        return ok and val or nil
+    end
+
+    function self:float(address)
+        if not validaddress(address) then return nil end
+        local ok, val = pcall(memory_read, "float", address)
+        return (ok and type(val) == "number") and val or nil
+    end
+
+    function self:byte(address)
+        if not validaddress(address) then return nil end
+        local ok, val = pcall(memory_read, "byte", address)
+        return (ok and type(val) == "number") and val or nil
+    end
+
+    function self:int(address)
+        if not validaddress(address) then return nil end
+        local ok, val = pcall(memory_read, "int", address)
+        return (ok and type(val) == "number") and val or nil
+    end
+
+    function self:matrix(address)
+        if not validaddress(address) then return nil end
+        local values = {}
+        for i = 0, 8 do
+            local ok, val = pcall(memory_read, "float", address + i * 4)
+            if not ok or type(val) ~= "number" then return nil end
+            values[i + 1] = val
+        end
+        return values
+    end
+
+    function self:writematrix(address, values)
+        if not validaddress(address) or type(values) ~= "table" or #values < 9 then return false end
+        for i = 1, 9 do
+            pcall(memory_write, "float", address + (i - 1) * 4, values[i])
+        end
+        return true
+    end
+
+    function self:animations(animator)
+        local result = {}
+        local inst = (type(animator) == "table" and animator.instance) and animator.instance or animator
+        local addr = (typeof(inst) == "Instance") and inst.Address or (type(inst) == "number" and inst or nil)
+        if not validaddress(addr) then return result end
+        local anim_off = self.offsets.Animator and self.offsets.Animator.ActiveAnimations
+        local track_anim_off = self.offsets.AnimationTrack and self.offsets.AnimationTrack.Animation
+        local track_tp_off = self.offsets.AnimationTrack and self.offsets.AnimationTrack.TimePosition
+        local id_off = self.offsets.Misc and self.offsets.Misc.AnimationId
+        if not (anim_off and track_anim_off and track_tp_off and id_off) then return result end
+
+        local head = self:pointer(addr + anim_off)
+        if not head then return result end
+
+        local current, count = self:pointer(head), 0
+        while current and current ~= head and count < 40 do
+            count = count + 1
+            local track = self:pointer(current + 16)
+            if track then
+                local anim_ptr = self:pointer(track + track_anim_off)
+                if anim_ptr then
+                    local id_ptr = self:pointer(anim_ptr + id_off)
+                    local raw = self:string(id_ptr)
+                    if raw then
+                        local id = raw:match("%d+$")
+                        if id then
+                            local tp = self:float(track + track_tp_off) or 0
+                            result[id] = { id = id, tp = tp }
+                        end
+                    end
+                end
+            end
+            current = self:pointer(current)
+        end
+        return result
+    end
+
+    local function compute_look_matrix(from_pos, to_pos)
+        local dx, dy, dz = to_pos.X - from_pos.X, to_pos.Y - from_pos.Y, to_pos.Z - from_pos.Z
+        local zx, zy, zz = -dx, -dy, -dz
+        local zmag = math.sqrt(zx * zx + zy * zy + zz * zz)
+        if zmag == 0 then return nil end
+        zx, zy, zz = zx / zmag, zy / zmag, zz / zmag
+        local ux, uy, uz = 0, 1, 0
+        if math.abs(zy) > 0.9999 then ux, uy, uz = 0, 0, 1 end
+        local xx, xy, xz = uy * zz - uz * zy, uz * zx - ux * zz, ux * zy - uy * zx
+        local xmag = math.sqrt(xx * xx + xy * xy + xz * xz)
+        if xmag == 0 then return nil end
+        xx, xy, xz = xx / xmag, xy / xmag, xz / xmag
+        local yx, yy, yz = zy * xz - zz * xy, zz * xx - zx * xz, zx * xy - zy * xx
+        return { xx, yx, zx, xy, yy, zy, xz, yz, zz }
+    end
+
+    function self:lookat(part, target_pos)
+        local inst = (type(part) == "table" and part.instance) and part.instance or part
+        if typeof(inst) ~= "Instance" or not validaddress(inst.Address) or typeof(target_pos) ~= "Vector3" then
+            return false
+        end
+        local my_pos = inst.Position
+        local prim_off = self.offsets.BasePart and self.offsets.BasePart.Primitive
+        local rot_off = self.offsets.Primitive and self.offsets.Primitive.Rotation
+        local prim = prim_off and self:pointer(inst.Address + prim_off)
+        if prim and rot_off then
+            local mat = compute_look_matrix(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+            if mat then
+                return self:writematrix(prim + rot_off, mat)
+            end
+        end
+        pcall(function()
+            inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+        end)
+        return true
     end
 
     return self
