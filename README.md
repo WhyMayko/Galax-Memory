@@ -86,7 +86,7 @@ end
 | `proxy:class()` | Original instance class name | Runtime validated |
 | `proxy:properties()` | Sorted supported property names | Used by `Validate.lua`; runtime validated |
 | `proxy:animations()` | Dictionary of active animation tracks `{ [id] = { id = id, tp = tp } }` | Runtime validated |
-| `proxy:lookat(target_pos)` | Rotates BasePart primitive rotation matrix towards target position | Runtime validated |
+| `proxy:lookat(target_pos, method?)` | Rotates BasePart primitive rotation matrix towards target position | Runtime validated |
 
 ### `memory:animations(animator)`
 
@@ -99,12 +99,15 @@ for id, info in pairs(tracks) do
 end
 ```
 
-### `memory:lookat(part, target_pos)`
+### `memory:lookat(part, target_pos, method?)`
 
-Rotates a `BasePart` instance (or proxy) towards a 3D `Vector3` position. Updates the 3x3 orientation matrix directly at `Primitive.Rotation` in memory without modifying CFrame.
+Rotates a `BasePart` instance (or proxy) towards a 3D `Vector3` position.
+
+- `method = "rotation"` (default): Writes the 3x3 orthonormal orientation matrix directly to `Primitive.Rotation` (`BasePart.Primitive + 200`) in memory without modifying CFrame. **Crucial for combat:** Preserves `AssemblyLinearVelocity` and running/strafing physics without freezing player momentum.
+- `method = "cframe"`: Sets `part.CFrame = CFrame.lookAt(part.Position, target_pos)`. Triggers the native Roblox physics transform setter, which halts/resets character velocity.
 
 ```lua
-memory:lookat(humanoidRootPart, enemyPosition)
+memory:lookat(humanoidRootPart, enemyPosition, "rotation")
 ```
 
 ### Safe Raw Memory Access
