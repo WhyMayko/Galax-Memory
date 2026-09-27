@@ -112,8 +112,8 @@ end
 local primitivefields = {
     position = "position",
     rotation = "rotation",
-    linearvelocity = "linearvelocity",
-    angularvelocity = "angularvelocity",
+    assemblylinearvelocity = "linearvelocity",
+    assemblyangularvelocity = "angularvelocity",
     flags = "flags",
     size = "size",
     owner = "owner",
