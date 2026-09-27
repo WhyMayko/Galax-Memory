@@ -72,12 +72,128 @@ local classbases = {
     Texture = { "Textures" },
 }
 
+local basepartclasses = {}
+
+for classname, bases in pairs(classbases) do
+    for _, base in ipairs(bases) do
+        if base == "BasePart" then
+            basepartclasses[classname] = true
+        end
+    end
+end
+
+local primitivefields = {
+    position = "position",
+    rotation = "rotation",
+    linearvelocity = "linearvelocity",
+    angularvelocity = "angularvelocity",
+    flags = "flags",
+    size = "size",
+    owner = "owner",
+}
+
+local primitivekinds = {
+    position = "vector3",
+    rotation = "matrix3x3",
+    linearvelocity = "vector3",
+    angularvelocity = "vector3",
+    flags = "byte",
+    size = "vector3",
+    owner = "pointer",
+}
+
+local primitivefieldorder = {
+    "partpointer",
+    "position",
+    "rotation",
+    "linearvelocity",
+    "angularvelocity",
+    "flags",
+    "size",
+    "owner",
+}
+
+local verifiedprimitive = {
+    source = "verified",
+    partpointer = 376,
+    position = 212,
+    rotation = 176,
+    linearvelocity = 224,
+    angularvelocity = 236,
+    flags = 438,
+    size = 444,
+    owner = 528,
+}
+
 local function fail(message)
     assert(false, "GalaxMemory: " .. message .. "!")
 end
 
 local function validaddress(address)
     return type(address) == "number" and address > 4096
+end
+
+local function readpointer(address)
+    if not validaddress(address) then
+        return nil
+    end
+    local value = memory_read("uintptr_t", address)
+    if not validaddress(value) then
+        return nil
+    end
+    return value
+end
+
+local function buildprofile(fields)
+    local profile = {}
+    for key, value in pairs(fields) do
+        profile[key] = value
+    end
+    return profile
+end
+
+local function manifestprimitive(offsets)
+    local part = offsets.BasePart or {}
+    local primitive = offsets.Primitive or {}
+    return {
+        source = "manifest",
+        partpointer = part.Primitive,
+        position = primitive.Position,
+        rotation = primitive.Rotation,
+        linearvelocity = primitive.AssemblyLinearVelocity,
+        angularvelocity = primitive.AssemblyAngularVelocity,
+        flags = primitive.Flags,
+        size = primitive.Size,
+        owner = primitive.Owner,
+    }
+end
+
+local function validprofile(profile)
+    for _, key in ipairs(primitivefieldorder) do
+        if type(profile[key]) ~= "number" then
+            return false
+        end
+    end
+    return true
+end
+
+local function validprimitive(pointer, part, profile)
+    if readpointer(pointer + profile.owner) ~= part.Address then
+        return false
+    end
+    return memoryread("float", pointer + profile.size) == part.Size.X
+end
+
+local function calibrateprimitive(part, candidates)
+    for _, profile in ipairs(candidates) do
+        if validprofile(profile) then
+            local pointer = readpointer(part.Address + profile.partpointer)
+            if pointer and validprimitive(pointer, part, profile) then
+                return buildprofile(profile)
+            end
+        end
+    end
+    return nil
 end
 
 local function request(url)
@@ -288,6 +404,50 @@ end
 
 local methods = {}
 local proxymetatable = {}
+local primitiveproxymethods = {}
+local primitiveproxymetatable = {}
+
+local function primitiveentry(profile, pointer, field)
+    return {
+        address = pointer + profile[field],
+        kind = primitivekinds[field],
+        property = field,
+    }
+end
+
+function primitiveproxymethods:address()
+    return self.pointer
+end
+
+function primitiveproxymethods:source()
+    return self.profile.source
+end
+
+function primitiveproxymethods:isvalid()
+    return readpointer(self.pointer + self.profile.owner) == self.instance.Address
+end
+
+function primitiveproxymetatable.__index(proxy, key)
+    local method = primitiveproxymethods[key]
+    if method then
+        return method
+    end
+    local field = primitivefields[normalize(key)]
+    if not field then
+        fail("unknown primitive property " .. tostring(key))
+    end
+    return readvalue(primitiveentry(proxy.profile, proxy.pointer, field))
+end
+
+function primitiveproxymetatable.__newindex(proxy, key, value)
+    local field = primitivefields[normalize(key)]
+    if not field then
+        fail("unknown primitive property " .. tostring(key))
+    end
+    local entry = primitiveentry(proxy.profile, proxy.pointer, field)
+    entry.value = value
+    writevalue(entry)
+end
 
 function methods:address()
     return self.instance.Address
@@ -312,6 +472,10 @@ end
 
 function methods:animations()
     return self.owner:animations(self.instance)
+end
+
+function methods:primitive()
+    return self.owner:primitive(self.instance)
 end
 
 function methods:lookat(target_pos, method)
@@ -503,6 +667,50 @@ function galaxmemory.new(options)
     end
     self.ptr = self.pointer
 
+    function self:primitiveprofile()
+        if self._profile then
+            return self._profile
+        end
+        local player = game:GetService("Players").LocalPlayer
+        local character = player and player.Character
+        local probe = character and character:FindFirstChild("HumanoidRootPart")
+        if not probe then
+            return nil, "no HumanoidRootPart is available to calibrate the primitive layout"
+        end
+        local profile = calibrateprimitive(probe, { verifiedprimitive, manifestprimitive(self.offsets) })
+        if not profile then
+            return nil, "no primitive layout passed the owner and size invariants"
+        end
+        self._profile = profile
+        return profile
+    end
+
+    function self:primitive(part)
+        local inst = (type(part) == "table" and part.instance) and part.instance or part
+        if typeof(inst) ~= "Instance" or not validaddress(inst.Address) then
+            return nil, "a valid instance is required"
+        end
+        if not basepartclasses[inst.ClassName] then
+            return nil, inst.ClassName .. " is not a BasePart class"
+        end
+        local profile, reason = self:primitiveprofile()
+        if not profile then
+            return nil, reason
+        end
+        local pointer = readpointer(inst.Address + profile.partpointer)
+        if not pointer then
+            return nil, "primitive pointer is null at part+" .. profile.partpointer
+        end
+        if not validprimitive(pointer, inst, profile) then
+            return nil, "primitive invariants failed at part+" .. profile.partpointer
+        end
+        return setmetatable({
+            pointer = pointer,
+            instance = inst,
+            profile = profile,
+        }, primitiveproxymetatable)
+    end
+
     function self:string(address)
         if not validaddress(address) then return nil end
         return memory_read("string", address)
@@ -599,20 +807,19 @@ function galaxmemory.new(options)
             return false
         end
         local my_pos = inst.Position
+        local flat = Vector3.new(target_pos.X, my_pos.Y, target_pos.Z)
         if method == "cframe" then
-            inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+            inst.CFrame = CFrame.lookAt(my_pos, flat)
             return true
         end
-        local prim_off = self.offsets.BasePart and self.offsets.BasePart.Primitive
-        local rot_off = self.offsets.Primitive and self.offsets.Primitive.Rotation
-        local prim = prim_off and self:pointer(inst.Address + prim_off)
-        if prim and rot_off then
-            local mat = compute_look_matrix(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+        local primitive = self:primitive(inst)
+        if primitive then
+            local mat = compute_look_matrix(my_pos, flat)
             if mat then
-                return self:writematrix(prim + rot_off, mat)
+                return self:writematrix(primitive.pointer + primitive.profile.rotation, mat)
             end
         end
-        inst.CFrame = CFrame.lookAt(my_pos, Vector3.new(target_pos.X, my_pos.Y, target_pos.Z))
+        inst.CFrame = CFrame.lookAt(my_pos, flat)
         return true
     end
 

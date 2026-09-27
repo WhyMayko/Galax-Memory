@@ -86,7 +86,8 @@ end
 | `proxy:class()` | Original instance class name | Runtime validated |
 | `proxy:properties()` | Sorted supported property names | Used by `Validate.lua`; runtime validated |
 | `proxy:animations()` | Dictionary of active animation tracks `{ [id] = { id = id, tp = tp } }` | Runtime validated |
-| `proxy:lookat(target_pos, method?)` | Rotates BasePart primitive rotation matrix towards target position | Runtime validated |
+| `proxy:primitive()` | Proxy for the part's physics Primitive, or `nil` plus a reason | Runtime validated |
+| `proxy:lookat(target_pos, method?)` | Rotates the BasePart primitive rotation matrix towards target position | Runtime validated, solver overwrites the result each step |
 
 ### `memory:animations(animator)`
 
@@ -103,12 +104,57 @@ end
 
 Rotates a `BasePart` instance (or proxy) towards a 3D `Vector3` position.
 
-- `method = "rotation"` (default): Writes the 3x3 orthonormal orientation matrix directly to `Primitive.Rotation` (`BasePart.Primitive + 200`) in memory without modifying CFrame. **Crucial for combat:** Preserves `AssemblyLinearVelocity` and running/strafing physics without freezing player momentum.
+- `method = "rotation"` (default): Writes the 3x3 orthonormal orientation matrix directly to the part's `Primitive.Rotation` field in memory without modifying CFrame. **Crucial for combat:** Preserves `AssemblyLinearVelocity` and running/strafing physics without freezing player momentum. The rotation offset is taken from the validated primitive profile, never from a hardcoded constant.
 - `method = "cframe"`: Sets `part.CFrame = CFrame.lookAt(part.Position, target_pos)`. Triggers the native Roblox physics transform setter, which halts/resets character velocity.
 
 ```lua
 memory:lookat(humanoidRootPart, enemyPosition, "rotation")
 ```
+
+Status: the rotation matrix write is honoured for one tick and is then overwritten by the local physics solver in Wanted (place `14438406081`). A locally simulated assembly re-derives its orientation every step, so use `AssemblyAngularVelocity` when the orientation must be held.
+
+### `memory:primitive(part)`
+
+Returns a memory proxy for the physics `Primitive` owned by a `BasePart`, or `nil` plus a reason string. This is the only supported way to reach primitive fields; consumer scripts must not carry primitive offsets.
+
+```lua
+local primitive = memory:primitive(chassis)
+if not primitive then
+    error("primitive unavailable: " .. tostring(reason))
+end
+
+primitive.AssemblyAngularVelocity = Vector3.new(0, 0, 40)
+print(primitive.AssemblyLinearVelocity)
+```
+
+| Field | Type | Access |
+| --- | --- | --- |
+| `Position` | `Vector3` | Read and write |
+| `AssemblyLinearVelocity` | `Vector3` | Read and write |
+| `AssemblyAngularVelocity` | `Vector3` | Read and write |
+| `Flags` | byte | Read |
+| `Size` | `Vector3` | Read |
+| `Owner` | pointer | Read |
+| `Rotation` | 3x3 matrix | Read only |
+
+| Method | Result |
+| --- | --- |
+| `primitive:address()` | Primitive memory address |
+| `primitive:source()` | `"verified"` or `"manifest"`, whichever profile passed calibration |
+| `primitive:isvalid()` | Re-checks the owner back-pointer invariant |
+
+`memory:bind(part):primitive()` is the equivalent bound form.
+
+### Primitive profile calibration
+
+The shipped `Offsets.json` manifest is dumped per Roblox build and drifts between builds. The library never trusts it blindly. `memory:primitive` resolves the primitive pointer and then enforces two independent invariants before it will return a proxy:
+
+1. `Primitive.Owner` must point back at the owning part address.
+2. `Primitive.Size.X` must equal `part.Size.X`.
+
+`memory:primitiveprofile()` tries the built-in verified profile first and the manifest profile second, and caches the first profile that passes both invariants. It returns `nil` plus a reason when the player has no `HumanoidRootPart` yet, or when no candidate layout validates. Nothing is ever written through an unvalidated address.
+
+Status: runtime validated. The verified profile was confirmed against a live client in Wanted (place `14438406081`) on the `version-ddf602d9cfe44005` manifest, where the manifest's own `BasePart.Primitive`, `Primitive.Position`, `Primitive.Rotation`, `Primitive.AssemblyLinearVelocity` and `Primitive.AssemblyAngularVelocity` entries are all wrong while `Primitive.Owner`, `Primitive.Size` and `Primitive.Flags` are correct. That divergence is exactly why calibration is mandatory.
 
 ### Safe Raw Memory Access
 
