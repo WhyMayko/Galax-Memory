@@ -82,6 +82,33 @@ for classname, bases in pairs(classbases) do
     end
 end
 
+local function fail(message)
+    assert(false, "GalaxMemory: " .. message .. "!")
+end
+
+local function validaddress(address)
+    return type(address) == "number" and address > 4096
+end
+
+local function readpointer(address)
+    if not validaddress(address) then
+        return nil
+    end
+    local value = memory_read("uintptr_t", address)
+    if not validaddress(value) then
+        return nil
+    end
+    return value
+end
+
+local function memoryread(kind, address)
+    local ok, value = pcall(memory_read, kind, address)
+    if not ok then
+        fail("read failed at " .. tostring(address))
+    end
+    return value
+end
+
 local primitivefields = {
     position = "position",
     rotation = "rotation",
@@ -124,25 +151,6 @@ local verifiedprimitive = {
     size = 444,
     owner = 528,
 }
-
-local function fail(message)
-    assert(false, "GalaxMemory: " .. message .. "!")
-end
-
-local function validaddress(address)
-    return type(address) == "number" and address > 4096
-end
-
-local function readpointer(address)
-    if not validaddress(address) then
-        return nil
-    end
-    local value = memory_read("uintptr_t", address)
-    if not validaddress(value) then
-        return nil
-    end
-    return value
-end
 
 local function buildprofile(fields)
     local profile = {}
@@ -227,14 +235,6 @@ end
 
 local function normalize(name)
     return string.lower((name:gsub("[^%w]", "")))
-end
-
-local function memoryread(kind, address)
-    local ok, value = pcall(memory_read, kind, address)
-    if not ok then
-        fail("read failed at " .. tostring(address))
-    end
-    return value
 end
 
 local function memorywrite(entry)
