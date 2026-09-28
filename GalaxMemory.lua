@@ -801,6 +801,26 @@ function galaxmemory.new(options)
         return { xx, yx, zx, xy, yy, zy, xz, yz, zz }
     end
 
+    function self:setvehiclevelocity(seat, chassis, velocity)
+        if typeof(velocity) ~= "Vector3" then
+            fail("setvehiclevelocity expects Vector3")
+        end
+        seat.AssemblyLinearVelocity = velocity
+        if chassis then
+            chassis.AssemblyLinearVelocity = velocity
+        end
+    end
+
+    function self:zerovehicleangular(prim)
+        if not prim then
+            return
+        end
+        local av = prim.profile.angularvelocity
+        memory_write("float", prim.pointer + av, 0)
+        memory_write("float", prim.pointer + av + 4, 0)
+        memory_write("float", prim.pointer + av + 8, 0)
+    end
+
     function self:lookat(part, target_pos, method)
         local inst = (type(part) == "table" and part.instance) and part.instance or part
         if typeof(inst) ~= "Instance" or not validaddress(inst.Address) or typeof(target_pos) ~= "Vector3" then
