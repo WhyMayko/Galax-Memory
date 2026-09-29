@@ -1,4 +1,4 @@
-local memory = GalaxMemory.new()
+﻿local memory = MemoryModule.new()
 local instances = {
     game,
     game:GetService("Workspace"),

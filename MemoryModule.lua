@@ -1,4 +1,4 @@
-local galaxmemory = {}
+﻿local memory_module = {}
 local httpservice = game:GetService("HttpService")
 
 local defaults = {
@@ -83,7 +83,7 @@ for classname, bases in pairs(classbases) do
 end
 
 local function fail(message)
-    assert(false, "GalaxMemory: " .. message .. "!")
+    assert(false, "MemoryModule: " .. message .. "!")
 end
 
 local function validaddress(address)
@@ -522,7 +522,7 @@ function proxymetatable.__newindex(proxy, key, value)
     fail("unknown property " .. tostring(key) .. " for " .. proxy.classname)
 end
 
-function galaxmemory.new(options)
+function memory_module.new(options)
     options = options or {}
     if type(options) ~= "table" then
         fail("options must be a table")
@@ -846,5 +846,6 @@ function galaxmemory.new(options)
     return self
 end
 
-getfenv().GalaxMemory = galaxmemory
-return galaxmemory
+getfenv().MemoryModule = memory_module
+return memory_module
+
