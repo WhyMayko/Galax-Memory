@@ -1,4 +1,4 @@
-﻿local memory_module = {}
+local memory_module = {}
 local httpservice = game:GetService("HttpService")
 
 local defaults = {
