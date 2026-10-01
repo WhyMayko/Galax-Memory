@@ -26,6 +26,7 @@ local aliases = {
     ["string"] = "string",
     ["unsigned __int64"] = "pointer",
     ["uintptr_t"] = "pointer",
+    ["pointer"] = "pointer",
     ["Vector2"] = "vector2",
     ["Vector3"] = "vector3",
     ["Color3"] = "color3",
@@ -37,39 +38,74 @@ local aliases = {
 local readonly = {
     ["unknown"] = true,
     ["matrix3x3"] = true,
-    ["string"] = true,
     ["rgbbyte"] = true,
 }
 
 local classbases = {
-    ScreenGui = { "GuiObject" },
-    BillboardGui = { "GuiObject" },
-    SurfaceGui = { "GuiObject" },
-    Frame = { "GuiObject" },
-    ScrollingFrame = { "GuiObject" },
-    TextLabel = { "GuiObject" },
-    TextButton = { "GuiObject" },
-    TextBox = { "GuiObject" },
-    ImageLabel = { "GuiObject" },
-    ImageButton = { "GuiObject" },
-    VideoFrame = { "GuiObject" },
-    ViewportFrame = { "GuiObject" },
-    Part = { "BasePart" },
-    MeshPart = { "BasePart" },
-    WedgePart = { "BasePart" },
-    CornerWedgePart = { "BasePart" },
-    TrussPart = { "BasePart" },
-    Seat = { "BasePart" },
-    VehicleSeat = { "BasePart" },
-    SpawnLocation = { "BasePart" },
-    UnionOperation = { "BasePart" },
-    NegateOperation = { "BasePart" },
-    PartOperation = { "BasePart" },
-    Shirt = { "Clothing" },
-    Pants = { "Clothing" },
-    ShirtGraphic = { "Clothing" },
-    Decal = { "Textures" },
-    Texture = { "Textures" },
+    ScreenGui = { "GuiObject", "GuiBase2D", "Instance" },
+    BillboardGui = { "GuiObject", "GuiBase2D", "Instance" },
+    SurfaceGui = { "GuiObject", "GuiBase2D", "Instance" },
+    Frame = { "GuiObject", "GuiBase2D", "Instance" },
+    ScrollingFrame = { "GuiObject", "GuiBase2D", "Instance" },
+    TextLabel = { "GuiObject", "GuiBase2D", "Instance" },
+    TextButton = { "GuiObject", "GuiBase2D", "Instance" },
+    TextBox = { "GuiObject", "GuiBase2D", "Instance" },
+    ImageLabel = { "GuiObject", "GuiBase2D", "Instance" },
+    ImageButton = { "GuiObject", "GuiBase2D", "Instance" },
+    VideoFrame = { "GuiObject", "GuiBase2D", "Instance" },
+    ViewportFrame = { "GuiObject", "GuiBase2D", "Instance" },
+    GuiObject = { "GuiBase2D", "Instance" },
+    GuiBase2D = { "Instance" },
+    Part = { "BasePart", "Instance" },
+    MeshPart = { "BasePart", "Instance" },
+    WedgePart = { "BasePart", "Instance" },
+    CornerWedgePart = { "BasePart", "Instance" },
+    TrussPart = { "BasePart", "Instance" },
+    Seat = { "BasePart", "Instance" },
+    VehicleSeat = { "Seat", "BasePart", "Instance" },
+    SpawnLocation = { "BasePart", "Instance" },
+    UnionOperation = { "BasePart", "Instance" },
+    NegateOperation = { "BasePart", "Instance" },
+    PartOperation = { "BasePart", "Instance" },
+    BasePart = { "Instance" },
+    Shirt = { "Clothing", "Instance" },
+    Pants = { "Clothing", "Instance" },
+    ShirtGraphic = { "Clothing", "Instance" },
+    Clothing = { "Instance" },
+    Decal = { "Textures", "Instance" },
+    Texture = { "Textures", "Instance" },
+    Textures = { "Instance" },
+    Humanoid = { "Instance" },
+    Camera = { "Instance" },
+    Player = { "Instance" },
+    Model = { "Instance" },
+    Tool = { "Instance" },
+    Sound = { "Instance" },
+    AnimationTrack = { "Instance" },
+    Animator = { "Instance" },
+    ProximityPrompt = { "Instance" },
+    ClickDetector = { "Instance" },
+    DragDetector = { "Instance" },
+    Attachment = { "Instance" },
+    Weld = { "Instance" },
+    WeldConstraint = { "Instance" },
+    Lighting = { "Instance" },
+    Sky = { "Instance" },
+    Atmosphere = { "Instance" },
+    BloomEffect = { "Instance" },
+    DepthOfFieldEffect = { "Instance" },
+    SunRaysEffect = { "Instance" },
+    ColorCorrectionEffect = { "Instance" },
+    ColorGradingEffect = { "Instance" },
+    BlurEffect = { "Instance" },
+    ParticleEmitter = { "Instance" },
+    Beam = { "Instance" },
+    SpecialMesh = { "Instance" },
+    CharacterMesh = { "Instance" },
+    SurfaceAppearance = { "Instance" },
+    Terrain = { "Instance" },
+    Workspace = { "Instance" },
+    DataModel = { "Instance" },
 }
 
 local basepartclasses = {}
@@ -102,11 +138,20 @@ local function readpointer(address)
 end
 
 local function memoryread(kind, address)
-    local ok, value = pcall(memory_read, kind, address)
+    local target_kind = (kind == "pointer" or kind == "unsigned __int64") and "uintptr_t" or kind
+    local ok, value = pcall(memory_read, target_kind, address)
     if not ok then
         fail("read failed at " .. tostring(address))
     end
     return value
+end
+
+local function memorywrite(entry)
+    local target_kind = (entry.kind == "pointer" or entry.kind == "unsigned __int64") and "uintptr_t" or entry.kind
+    local ok = pcall(memory_write, target_kind, entry.address, entry.value)
+    if not ok then
+        fail("write failed at " .. tostring(entry.address))
+    end
 end
 
 local primitivefields = {
@@ -237,13 +282,6 @@ local function normalize(name)
     return string.lower((name:gsub("[^%w]", "")))
 end
 
-local function memorywrite(entry)
-    local ok = pcall(memory_write, entry.kind, entry.address, entry.value)
-    if not ok then
-        fail("write failed at " .. tostring(entry.address))
-    end
-end
-
 local function readvector2(address)
     return Vector2.new(memoryread("float", address), memoryread("float", address + 4))
 end
@@ -371,6 +409,24 @@ local function writevalue(entry)
         memorywrite(entry)
         return
     end
+    if entry.kind == "pointer" then
+        if type(entry.value) ~= "number" or not validaddress(entry.value) then
+            fail(entry.property .. " expects valid pointer address")
+        end
+        memorywrite({ kind = "uintptr_t", address = entry.address, value = entry.value })
+        return
+    end
+    if entry.kind == "string" then
+        if type(entry.value) ~= "string" then
+            fail(entry.property .. " expects string")
+        end
+        local pointer = memoryread("uintptr_t", entry.address)
+        if not validaddress(pointer) then
+            fail(entry.property .. " has an invalid string pointer")
+        end
+        memorywrite({ kind = "string", address = pointer, value = entry.value })
+        return
+    end
     if entry.kind == "fov" then
         if type(entry.value) ~= "number" or entry.value <= 0 or entry.value > 120 then
             fail(entry.property .. " expects degrees from one to one hundred twenty")
@@ -470,6 +526,14 @@ function methods:properties()
     return result
 end
 
+function methods:offset(property)
+    local descriptor = self.lookup[normalize(property)]
+    if descriptor then
+        return self.owner.offsets[descriptor.classname][descriptor.property]
+    end
+    return self.owner:offset(self.classname, property)
+end
+
 function methods:animations()
     return self.owner:animations(self.instance)
 end
@@ -556,7 +620,7 @@ function memory_module.new(options)
             fail("a valid instance is required")
         end
         local candidates = { instance.ClassName }
-        for _, classname in ipairs(classbases[instance.ClassName] or {}) do
+        for _, classname in ipairs(classbases[instance.ClassName] or { "Instance" }) do
             candidates[#candidates + 1] = classname
         end
         local schemas = {}
@@ -613,11 +677,37 @@ function memory_module.new(options)
     function self:read(instance, property, requestedclass)
         return readvalue(self:entry(instance, property, requestedclass))
     end
+    self.get = self.read
 
     function self:write(instance, property, value)
         local entry = self:entry(instance, property)
         entry.value = value
         writevalue(entry)
+    end
+    self.set = self.write
+
+    function self:offset(classname, property)
+        if type(classname) ~= "string" or type(property) ~= "string" then
+            return nil
+        end
+        local target_prop = normalize(property)
+        local queue = { classname }
+        for _, base in ipairs(classbases[classname] or {}) do
+            queue[#queue + 1] = base
+        end
+        queue[#queue + 1] = "Instance"
+
+        for _, cname in ipairs(queue) do
+            local class_offsets = self.offsets[cname]
+            if class_offsets then
+                for raw_prop, off in pairs(class_offsets) do
+                    if normalize(raw_prop) == target_prop and type(off) == "number" then
+                        return off
+                    end
+                end
+            end
+        end
+        return nil
     end
 
     function self:bind(instance, requestedclass)
@@ -667,6 +757,186 @@ function memory_module.new(options)
     end
     self.ptr = self.pointer
 
+    function self:writepointer(address, value)
+        if not validaddress(address) or not validaddress(value) then return false end
+        memorywrite({ kind = "uintptr_t", address = address, value = value })
+        return true
+    end
+    self.writeptr = self.writepointer
+
+    function self:byte(address)
+        if not validaddress(address) then return nil end
+        return memory_read("byte", address)
+    end
+
+    function self:writebyte(address, value)
+        if not validaddress(address) or type(value) ~= "number" then return false end
+        memorywrite({ kind = "byte", address = address, value = value })
+        return true
+    end
+
+    function self:int(address)
+        if not validaddress(address) then return nil end
+        return memory_read("int", address)
+    end
+
+    function self:writeint(address, value)
+        if not validaddress(address) or type(value) ~= "number" then return false end
+        memorywrite({ kind = "int", address = address, value = value })
+        return true
+    end
+
+    function self:float(address)
+        if not validaddress(address) then return nil end
+        return memory_read("float", address)
+    end
+
+    function self:writefloat(address, value)
+        if not validaddress(address) or type(value) ~= "number" then return false end
+        memorywrite({ kind = "float", address = address, value = value })
+        return true
+    end
+
+    function self:double(address)
+        if not validaddress(address) then return nil end
+        return memory_read("double", address)
+    end
+
+    function self:writedouble(address, value)
+        if not validaddress(address) or type(value) ~= "number" then return false end
+        memorywrite({ kind = "double", address = address, value = value })
+        return true
+    end
+
+    function self:bool(address)
+        if not validaddress(address) then return nil end
+        return memory_read("byte", address) ~= 0
+    end
+
+    function self:writebool(address, value)
+        if not validaddress(address) then return false end
+        memorywrite({ kind = "byte", address = address, value = value and 1 or 0 })
+        return true
+    end
+
+    function self:string(address)
+        if not validaddress(address) then return nil end
+        return memory_read("string", address)
+    end
+
+    function self:writestring(address, value)
+        if not validaddress(address) or type(value) ~= "string" then return false end
+        memorywrite({ kind = "string", address = address, value = value })
+        return true
+    end
+
+    function self:vector2(address)
+        if not validaddress(address) then return nil end
+        return readvector2(address)
+    end
+
+    function self:writevector2(address, value)
+        if not validaddress(address) or typeof(value) ~= "Vector2" then return false end
+        writevector2({ address = address, value = value, property = "vector2" })
+        return true
+    end
+
+    function self:vector3(address)
+        if not validaddress(address) then return nil end
+        return readvector3(address)
+    end
+
+    function self:writevector3(address, value)
+        if not validaddress(address) or typeof(value) ~= "Vector3" then return false end
+        writevector3({ address = address, value = value, property = "vector3" })
+        return true
+    end
+
+    function self:color3(address)
+        if not validaddress(address) then return nil end
+        return readcolor3(address)
+    end
+
+    function self:writecolor3(address, value)
+        if not validaddress(address) or typeof(value) ~= "Color3" then return false end
+        writecolor3({ address = address, value = value, property = "color3" })
+        return true
+    end
+
+    function self:rgbbyte(address)
+        if not validaddress(address) then return nil end
+        return readrgbbyte(address)
+    end
+
+    function self:writergbbyte(address, value)
+        if not validaddress(address) or typeof(value) ~= "Color3" then return false end
+        memorywrite({ kind = "byte", address = address, value = math.floor(value.R * 255) })
+        memorywrite({ kind = "byte", address = address + 1, value = math.floor(value.G * 255) })
+        memorywrite({ kind = "byte", address = address + 2, value = math.floor(value.B * 255) })
+        return true
+    end
+
+    function self:udim2(address)
+        if not validaddress(address) then return nil end
+        return readudim2(address)
+    end
+
+    function self:writeudim2(address, value)
+        if not validaddress(address) or type(value) ~= "table" then return false end
+        writeudim2({ address = address, value = value, property = "udim2" })
+        return true
+    end
+
+    function self:matrix(address)
+        if not validaddress(address) then return nil end
+        return readmatrix(address)
+    end
+
+    function self:writematrix(address, values)
+        if not validaddress(address) or type(values) ~= "table" or #values < 9 then return false end
+        for i = 1, 9 do
+            memory_write("float", address + (i - 1) * 4, values[i])
+        end
+        return true
+    end
+
+    function self:rawread(kind, address)
+        local k = aliases[kind] or kind
+        if k == "pointer" or k == "uintptr_t" then return self:pointer(address) end
+        if k == "byte" then return self:byte(address) end
+        if k == "int" then return self:int(address) end
+        if k == "float" then return self:float(address) end
+        if k == "double" then return self:double(address) end
+        if k == "bool" then return self:bool(address) end
+        if k == "string" then return self:string(address) end
+        if k == "vector2" then return self:vector2(address) end
+        if k == "vector3" then return self:vector3(address) end
+        if k == "color3" then return self:color3(address) end
+        if k == "rgbbyte" then return self:rgbbyte(address) end
+        if k == "udim2" then return self:udim2(address) end
+        if k == "matrix3x3" or k == "matrix" then return self:matrix(address) end
+        return memoryread(k, address)
+    end
+
+    function self:rawwrite(kind, address, value)
+        local k = aliases[kind] or kind
+        if k == "pointer" or k == "uintptr_t" then return self:writepointer(address, value) end
+        if k == "byte" then return self:writebyte(address, value) end
+        if k == "int" then return self:int(address) end
+        if k == "float" then return self:writefloat(address, value) end
+        if k == "double" then return self:writedouble(address, value) end
+        if k == "bool" then return self:writebool(address, value) end
+        if k == "string" then return self:writestring(address, value) end
+        if k == "vector2" then return self:writevector2(address, value) end
+        if k == "vector3" then return self:writevector3(address, value) end
+        if k == "color3" then return self:writecolor3(address, value) end
+        if k == "rgbbyte" then return self:writergbbyte(address, value) end
+        if k == "udim2" then return self:writeudim2(address, value) end
+        if k == "matrix3x3" or k == "matrix" then return self:writematrix(address, value) end
+        memorywrite({ kind = k, address = address, value = value })
+        return true
+    end
+
     function self:primitiveprofile()
         if self._profile then
             return self._profile
@@ -709,43 +979,6 @@ function memory_module.new(options)
             instance = inst,
             profile = profile,
         }, primitiveproxymetatable)
-    end
-
-    function self:string(address)
-        if not validaddress(address) then return nil end
-        return memory_read("string", address)
-    end
-
-    function self:float(address)
-        if not validaddress(address) then return nil end
-        return memory_read("float", address)
-    end
-
-    function self:byte(address)
-        if not validaddress(address) then return nil end
-        return memory_read("byte", address)
-    end
-
-    function self:int(address)
-        if not validaddress(address) then return nil end
-        return memory_read("int", address)
-    end
-
-    function self:matrix(address)
-        if not validaddress(address) then return nil end
-        local values = {}
-        for i = 0, 8 do
-            values[i + 1] = memory_read("float", address + i * 4)
-        end
-        return values
-    end
-
-    function self:writematrix(address, values)
-        if not validaddress(address) or type(values) ~= "table" or #values < 9 then return false end
-        for i = 1, 9 do
-            memory_write("float", address + (i - 1) * 4, values[i])
-        end
-        return true
     end
 
     function self:animations(animator)
@@ -848,4 +1081,3 @@ end
 
 getfenv().MemoryModule = memory_module
 return memory_module
-
