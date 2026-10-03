@@ -1054,6 +1054,32 @@ function memory_module.new(options)
         memory_write("float", prim.pointer + av + 8, 0)
     end
 
+    function self:freezevelocity(part)
+        local inst = (type(part) == "table" and part.instance) and part.instance or part
+        if typeof(inst) ~= "Instance" then return false end
+        inst.AssemblyLinearVelocity = Vector3.zero
+        inst.AssemblyAngularVelocity = Vector3.zero
+        local prim = self:primitive(inst)
+        if prim then
+            local lv = prim.profile.linearvelocity
+            local av = prim.profile.angularvelocity
+            memory_write("float", prim.pointer + lv, 0)
+            memory_write("float", prim.pointer + lv + 4, 0)
+            memory_write("float", prim.pointer + lv + 8, 0)
+            memory_write("float", prim.pointer + av, 0)
+            memory_write("float", prim.pointer + av + 4, 0)
+            memory_write("float", prim.pointer + av + 8, 0)
+        end
+        return true
+    end
+
+    function self:distance(a, b)
+        local pos_a = typeof(a) == "Vector3" and a or (a and a.Position)
+        local pos_b = typeof(b) == "Vector3" and b or (b and b.Position)
+        if not pos_a or not pos_b then return math.huge end
+        return (pos_a - pos_b).Magnitude
+    end
+
     function self:lookat(part, target_pos, method)
         local inst = (type(part) == "table" and part.instance) and part.instance or part
         if typeof(inst) ~= "Instance" or not validaddress(inst.Address) or typeof(target_pos) ~= "Vector3" then
@@ -1061,19 +1087,38 @@ function memory_module.new(options)
         end
         local my_pos = inst.Position
         local flat = Vector3.new(target_pos.X, my_pos.Y, target_pos.Z)
-        if method == "cframe" then
-            inst.CFrame = CFrame.lookAt(my_pos, flat)
-            return true
+        local dir = flat - my_pos
+        if dir.Magnitude < 0.05 then return false end
+
+        local target_dir = dir.Unit
+        local cur_look = inst.CFrame.LookVector
+        local dot = cur_look.X * target_dir.X + cur_look.Z * target_dir.Z
+
+        local m = method or "smart"
+        if m == "cframe" or m == "smart" then
+            if dot < 0.999 then
+                inst.CFrame = CFrame.lookAt(my_pos, flat)
+                return true
+            end
+            return false
         end
+
         local primitive = self:primitive(inst)
         if primitive then
             local mat = compute_look_matrix(my_pos, flat)
             if mat then
-                return self:writematrix(primitive.pointer + primitive.profile.rotation, mat)
+                self:writematrix(primitive.pointer + primitive.profile.rotation, mat)
+                if m == "hybrid" and dot < 0.999 then
+                    inst.CFrame = CFrame.lookAt(my_pos, flat)
+                end
+                return true
             end
         end
-        inst.CFrame = CFrame.lookAt(my_pos, flat)
-        return true
+        if dot < 0.999 then
+            inst.CFrame = CFrame.lookAt(my_pos, flat)
+            return true
+        end
+        return false
     end
 
     return self
