@@ -1086,18 +1086,17 @@ function memory_module.new(options)
             return false
         end
         local my_pos = inst.Position
-        local flat = Vector3.new(target_pos.X, my_pos.Y, target_pos.Z)
-        local dir = flat - my_pos
+        local dir = target_pos - my_pos
         if dir.Magnitude < 0.05 then return false end
 
         local target_dir = dir.Unit
         local cur_look = inst.CFrame.LookVector
-        local dot = cur_look.X * target_dir.X + cur_look.Z * target_dir.Z
+        local dot = cur_look.X * target_dir.X + cur_look.Y * target_dir.Y + cur_look.Z * target_dir.Z
 
         local m = method or "smart"
         if m == "cframe" or m == "smart" then
             if dot < 0.999 then
-                inst.CFrame = CFrame.lookAt(my_pos, flat)
+                inst.CFrame = CFrame.lookAt(my_pos, target_pos)
                 return true
             end
             return false
@@ -1105,17 +1104,17 @@ function memory_module.new(options)
 
         local primitive = self:primitive(inst)
         if primitive then
-            local mat = compute_look_matrix(my_pos, flat)
+            local mat = compute_look_matrix(my_pos, target_pos)
             if mat then
                 self:writematrix(primitive.pointer + primitive.profile.rotation, mat)
                 if m == "hybrid" and dot < 0.999 then
-                    inst.CFrame = CFrame.lookAt(my_pos, flat)
+                    inst.CFrame = CFrame.lookAt(my_pos, target_pos)
                 end
                 return true
             end
         end
         if dot < 0.999 then
-            inst.CFrame = CFrame.lookAt(my_pos, flat)
+            inst.CFrame = CFrame.lookAt(my_pos, target_pos)
             return true
         end
         return false
